@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================
-#   Manus 沙箱唤醒管理面板 - 一键安装脚本 v2
+#   Manus 沙箱唤醒管理面板 - 一键安装脚本 v3
 #   自动检测系统环境，安装所有依赖，开机自启
 # ============================================================
 
@@ -14,7 +14,7 @@ SERVICE_FILE="/etc/systemd/system/manus-panel.service"
 AGENT_SCRIPT="/usr/local/bin/manus_wakeup_agent.py"
 LOG_FILE="/var/log/manus_wakeup.log"
 PANEL_PORT=7788
-GITHUB_RAW="https://raw.githubusercontent.com/Reang0/manus-wakeup-panel/master"
+BASE_URL="https://8899-igkicgn0b5oll51c3hdn6-51c29af6.us2.manus.computer"
 
 info()    { echo -e "${CYAN}[INFO]${NC} $1"; }
 success() { echo -e "${GREEN}[✓]${NC} $1"; }
@@ -25,15 +25,14 @@ step()    { echo -e "\n${BOLD}${YELLOW}[$1/7] $2${NC}"; }
 clear
 echo -e "${CYAN}${BOLD}"
 echo "╔══════════════════════════════════════════════════╗"
-echo "║    Manus 沙箱唤醒管理面板 - 一键安装 v2         ║"
+echo "║    Manus 沙箱唤醒管理面板 - 一键安装 v3         ║"
 echo "║    自动检测环境 · 安装依赖 · 开机自启            ║"
 echo "╚══════════════════════════════════════════════════╝"
 echo -e "${NC}"
 
-# ── 检查 root ─────────────────────────────────────────────
-[[ $EUID -ne 0 ]] && error "请使用 root 权限运行此脚本（sudo bash install.sh）"
+[[ $EUID -ne 0 ]] && error "请使用 root 权限运行此脚本"
 
-# ── 检测系统类型 ──────────────────────────────────────────
+# ── 检测系统 ──────────────────────────────────────────────
 step 1 "检测系统环境"
 OS=""; PKG_MGR=""
 if command -v apt-get &>/dev/null; then
@@ -60,7 +59,6 @@ for cmd in python3.11 python3.10 python3.9 python3.8 python3; do
         fi
     fi
 done
-
 if [[ -z "$PYTHON" ]]; then
     warn "未找到 Python 3.8+，正在安装..."
     if [[ "$OS" == "debian" ]]; then
@@ -89,15 +87,14 @@ if ! $PYTHON -m pip --version &>/dev/null 2>&1; then
         rm -f /tmp/get-pip.py
     fi
 fi
-$PYTHON -m pip --version &>/dev/null || error "pip 安装失败，请手动执行：curl -sS https://bootstrap.pypa.io/get-pip.py | $PYTHON"
+$PYTHON -m pip --version &>/dev/null || error "pip 安装失败"
 success "pip 就绪"
 
-# ── 安装 Python 依赖 ──────────────────────────────────────
+# ── 安装依赖 ──────────────────────────────────────────────
 step 4 "安装 Python 依赖（flask, requests）"
 install_pkg() {
     local pkg=$1
-    local import_name=${2:-$1}
-    if $PYTHON -c "import $import_name" &>/dev/null 2>&1; then
+    if $PYTHON -c "import $pkg" &>/dev/null 2>&1; then
         info "$pkg 已安装，跳过"; return 0
     fi
     warn "$pkg 未安装，正在安装..."
@@ -111,30 +108,24 @@ install_pkg flask
 install_pkg requests
 success "所有依赖安装完成"
 
-# ── 创建目录并下载文件 ────────────────────────────────────
-step 5 "下载项目文件（来自 GitHub）"
+# ── 下载文件 ──────────────────────────────────────────────
+step 5 "下载项目文件"
 mkdir -p "$PANEL_DIR/templates" /etc/manus_wakeup
 touch "$LOG_FILE" && chmod 666 "$LOG_FILE"
 
 download() {
     local url=$1; local dest=$2
     info "下载 $(basename $dest)..."
-    if command -v curl &>/dev/null; then
-        curl -fsSL "$url" -o "$dest" || error "下载失败：$url"
-    elif command -v wget &>/dev/null; then
-        wget -q "$url" -O "$dest" || error "下载失败：$url"
-    else
-        error "未找到 curl 或 wget"
-    fi
+    curl -fsSL "$url" -o "$dest" || wget -q "$url" -O "$dest" || error "下载失败：$url"
 }
 
-download "$GITHUB_RAW/panel/app.py"               "$PANEL_DIR/app.py"
-download "$GITHUB_RAW/panel/templates/index.html"  "$PANEL_DIR/templates/index.html"
-download "$GITHUB_RAW/scripts/wakeup_agent.py"    "$AGENT_SCRIPT"
+download "$BASE_URL/app.py"       "$PANEL_DIR/app.py"
+download "$BASE_URL/index.html"   "$PANEL_DIR/templates/index.html"
+download "$BASE_URL/agent.py"     "$AGENT_SCRIPT"
 chmod +x "$AGENT_SCRIPT"
 success "文件下载完成"
 
-# ── 配置 systemd 服务 ─────────────────────────────────────
+# ── 配置 systemd ──────────────────────────────────────────
 step 6 "配置系统服务（开机自启）"
 PYTHON_PATH=$(command -v $PYTHON)
 
@@ -165,12 +156,11 @@ if command -v systemctl &>/dev/null; then
     if systemctl is-active --quiet manus-panel; then
         success "systemd 服务启动成功"
     else
-        warn "systemd 启动异常，尝试直接运行..."
+        warn "systemd 启动异常，尝试 nohup 运行..."
         nohup $PYTHON_PATH $PANEL_DIR/app.py >> $LOG_FILE 2>&1 &
         sleep 3
     fi
 else
-    warn "不支持 systemd，使用 nohup 后台运行"
     nohup $PYTHON_PATH $PANEL_DIR/app.py >> $LOG_FILE 2>&1 &
     sleep 3
 fi
@@ -179,14 +169,13 @@ fi
 step 7 "配置 cron 定时唤醒（每分钟）"
 (crontab -l 2>/dev/null | grep -v "manus_wakeup") | crontab - 2>/dev/null || true
 (crontab -l 2>/dev/null; echo "* * * * * $PYTHON_PATH $AGENT_SCRIPT run >> $LOG_FILE 2>&1") | crontab -
-success "cron 配置完成（每分钟执行）"
+success "cron 配置完成"
 
 # ── 验证 ──────────────────────────────────────────────────
 sleep 2
 HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$PANEL_PORT/" 2>/dev/null || echo "000")
-[[ "$HTTP_CODE" == "200" ]] && success "服务验证通过" || warn "服务可能未完全启动（HTTP $HTTP_CODE），请查看日志：tail -f $LOG_FILE"
+[[ "$HTTP_CODE" == "200" ]] && success "服务验证通过" || warn "服务启动中，请稍后查看日志：tail -f $LOG_FILE"
 
-# ── 完成 ─────────────────────────────────────────────────
 HOST_IP=$(curl -s --max-time 5 https://api.ipify.org 2>/dev/null || hostname -I | awk '{print $1}')
 echo ""
 echo -e "${GREEN}${BOLD}"
@@ -200,7 +189,6 @@ echo -e "  ${CYAN}常用命令：${NC}"
 echo -e "    查看服务状态：  systemctl status manus-panel"
 echo -e "    查看实时日志：  tail -f $LOG_FILE"
 echo -e "    重启面板：      systemctl restart manus-panel"
-echo -e "    停止面板：      systemctl stop manus-panel"
 echo ""
 echo -e "  ${YELLOW}注意：请确保服务器防火墙/安全组已放行 ${PANEL_PORT} 端口${NC}"
 echo ""
