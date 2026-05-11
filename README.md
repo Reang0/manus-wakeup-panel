@@ -46,7 +46,7 @@ manus-wakeup-panel/
 在你的服务器上以 **root** 权限执行：
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/manus-wakeup-panel/main/scripts/install.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/manus-wakeup-panel/master/scripts/install.sh)
 ```
 
 安装完成后，浏览器打开 `http://你的服务器IP:7788` 即可使用管理面板。
@@ -54,7 +54,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/manus-wakeup-p
 ### 方式二：轻量安装（仅唤醒脚本，无面板）
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/manus-wakeup-panel/main/scripts/install_lite.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/manus-wakeup-panel/master/scripts/install_lite.sh)
 ```
 
 ---
@@ -168,7 +168,7 @@ python3 /usr/local/bin/manus_wakeup_agent.py run
 ## 卸载
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/manus-wakeup-panel/main/scripts/uninstall.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/manus-wakeup-panel/master/scripts/uninstall.sh)
 ```
 
 卸载将删除：
