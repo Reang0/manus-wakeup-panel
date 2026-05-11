@@ -252,7 +252,7 @@ def get_logs():
 def stream_logs():
     """SSE 实时日志流"""
     def generate():
-        # 先发送最近 50 行
+        # 先发送最近 50 行历史日志
         try:
             if LOG_FILE.exists():
                 lines = LOG_FILE.read_text(errors="replace").splitlines()[-50:]
@@ -261,21 +261,44 @@ def stream_logs():
         except Exception:
             pass
 
-        # 然后持续 tail
+        # 持续 tail -f 并加入心跳防断连
+        proc = None
         try:
+            # 确保日志文件存在
+            LOG_FILE.touch(exist_ok=True)
             proc = subprocess.Popen(
-                ["tail", "-f", str(LOG_FILE)],
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                text=True
+                ["tail", "-f", "-n", "0", str(LOG_FILE)],
+                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                text=True, bufsize=1
             )
-            for line in proc.stdout:
-                yield f"data: {line.rstrip()}\n\n"
+            last_heartbeat = time.time()
+            while True:
+                # 非阻塞读取
+                import select
+                rlist, _, _ = select.select([proc.stdout], [], [], 5.0)
+                if rlist:
+                    line = proc.stdout.readline()
+                    if line:
+                        yield f"data: {line.rstrip()}\n\n"
+                        last_heartbeat = time.time()
+                else:
+                    # 每 5 秒发送心跳保持连接
+                    yield f": heartbeat\n\n"
+                    last_heartbeat = time.time()
+        except GeneratorExit:
+            pass
         except Exception as e:
-            yield f"data: [错误] {e}\n\n"
+            yield f"data: [日志流错误] {e}\n\n"
+        finally:
+            if proc:
+                try:
+                    proc.terminate()
+                except Exception:
+                    pass
 
     return Response(stream_with_context(generate()),
                     mimetype="text/event-stream",
-                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"})
 
 @app.route("/api/logs/clear", methods=["POST"])
 def clear_logs():
