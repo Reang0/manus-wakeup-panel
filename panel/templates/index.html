@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Manus 沙箱唤醒管理面板</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0f1117;
+    --card: #1a1d27;
+    --border: #2a2d3e;
+    --accent: #6c63ff;
+    --accent2: #00d4aa;
+    --danger: #ff4757;
+    --warn: #ffa502;
+    --text: #e0e0e0;
+    --muted: #888;
+    --green: #2ed573;
+  }
+  body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; min-height: 100vh; }
+
+  /* Header */
+  .header { background: linear-gradient(135deg, #1a1d27 0%, #12151f 100%); border-bottom: 1px solid var(--border); padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; }
+  .header h1 { font-size: 20px; font-weight: 700; background: linear-gradient(90deg, var(--accent), var(--accent2)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .header .status-bar { display: flex; gap: 12px; align-items: center; }
+  .badge { padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+  .badge.green { background: rgba(46,213,115,0.15); color: var(--green); border: 1px solid rgba(46,213,115,0.3); }
+  .badge.red { background: rgba(255,71,87,0.15); color: var(--danger); border: 1px solid rgba(255,71,87,0.3); }
+  .badge.gray { background: rgba(136,136,136,0.15); color: var(--muted); border: 1px solid rgba(136,136,136,0.3); }
+
+  /* Layout */
+  .container { max-width: 1400px; margin: 0 auto; padding: 24px; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 900px) { .container { grid-template-columns: 1fr; } }
+
+  /* Cards */
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+  .card-title { font-size: 14px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+  .card-title .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+
+  /* Form */
+  .form-group { margin-bottom: 12px; }
+  label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  input, textarea { width: 100%; background: #12151f; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; color: var(--text); font-size: 13px; outline: none; transition: border-color 0.2s; font-family: monospace; }
+  input:focus, textarea:focus { border-color: var(--accent); }
+  textarea { resize: vertical; min-height: 60px; }
+
+  /* Buttons */
+  .btn { padding: 9px 18px; border-radius: 8px; border: none; cursor: pointer; font-size: 13px; font-weight: 600; transition: all 0.2s; display: inline-flex; align-items: center; gap: 6px; }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-primary:hover { background: #5a52d5; }
+  .btn-success { background: rgba(46,213,115,0.15); color: var(--green); border: 1px solid rgba(46,213,115,0.3); }
+  .btn-success:hover { background: rgba(46,213,115,0.25); }
+  .btn-danger { background: rgba(255,71,87,0.15); color: var(--danger); border: 1px solid rgba(255,71,87,0.3); }
+  .btn-danger:hover { background: rgba(255,71,87,0.25); }
+  .btn-warn { background: rgba(255,165,2,0.15); color: var(--warn); border: 1px solid rgba(255,165,2,0.3); }
+  .btn-warn:hover { background: rgba(255,165,2,0.25); }
+  .btn-ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+  .btn-ghost:hover { color: var(--text); border-color: var(--text); }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+
+  /* Instance list */
+  .instance-list { display: flex; flex-direction: column; gap: 10px; }
+  .instance-item { background: #12151f; border: 1px solid var(--border); border-radius: 10px; padding: 14px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .instance-item:hover { border-color: var(--accent); }
+  .instance-info { flex: 1; min-width: 0; }
+  .instance-id { font-family: monospace; font-size: 13px; color: var(--accent2); font-weight: 600; }
+  .instance-meta { font-size: 11px; color: var(--muted); margin-top: 4px; display: flex; gap: 12px; flex-wrap: wrap; }
+  .instance-status { display: flex; align-items: center; gap: 6px; }
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .status-dot.active { background: var(--green); box-shadow: 0 0 6px var(--green); animation: pulse 2s infinite; }
+  .status-dot.invalid { background: var(--danger); }
+  .status-dot.auto_removed { background: var(--warn); }
+  .status-dot.unknown { background: var(--muted); }
+  @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
+
+  .empty-state { text-align: center; padding: 40px; color: var(--muted); font-size: 14px; }
+
+  /* Log panel */
+  .log-panel { grid-column: 1 / -1; }
+  .log-box { background: #0a0c12; border: 1px solid var(--border); border-radius: 8px; padding: 14px; height: 320px; overflow-y: auto; font-family: 'Courier New', monospace; font-size: 12px; line-height: 1.6; white-space: pre-wrap; word-break: break-all; }
+  .log-box .log-info { color: #7ec8e3; }
+  .log-box .log-warn { color: var(--warn); }
+  .log-box .log-error { color: var(--danger); }
+  .log-box .log-panel { color: var(--accent2); }
+  .log-controls { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
+  .log-controls .spacer { flex: 1; }
+  .live-indicator { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--green); }
+  .live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); animation: pulse 1s infinite; }
+
+  /* Toast */
+  #toast { position: fixed; bottom: 24px; right: 24px; z-index: 999; display: flex; flex-direction: column; gap: 8px; }
+  .toast-item { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px 18px; font-size: 13px; min-width: 260px; display: flex; align-items: center; gap: 10px; animation: slideIn 0.3s ease; box-shadow: 0 4px 20px rgba(0,0,0,0.4); }
+  .toast-item.success { border-left: 3px solid var(--green); }
+  .toast-item.error { border-left: 3px solid var(--danger); }
+  .toast-item.info { border-left: 3px solid var(--accent); }
+  @keyframes slideIn { from { transform: translateX(100%); opacity:0; } to { transform: translateX(0); opacity:1; } }
+
+  /* Stats */
+  .stats-row { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+  .stat-card { flex: 1; min-width: 80px; background: #12151f; border: 1px solid var(--border); border-radius: 10px; padding: 12px; text-align: center; }
+  .stat-num { font-size: 24px; font-weight: 700; color: var(--accent); }
+  .stat-label { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+  /* Confirm modal */
+  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 100; align-items: center; justify-content: center; }
+  .modal-overlay.show { display: flex; }
+  .modal { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 28px; max-width: 420px; width: 90%; }
+  .modal h3 { font-size: 16px; margin-bottom: 10px; }
+  .modal p { font-size: 13px; color: var(--muted); margin-bottom: 20px; line-height: 1.6; }
+  .modal .btn-row { justify-content: flex-end; }
+
+  .section-full { grid-column: 1 / -1; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>⚡ Manus 沙箱唤醒管理面板</h1>
+  <div class="status-bar">
+    <span id="cron-badge" class="badge gray">cron 检查中...</span>
+    <span id="total-badge" class="badge gray">0 个实例</span>
+  </div>
+</div>
+
+<div class="container">
+
+  <!-- 添加实例 -->
+  <div class="card">
+    <div class="card-title"><span class="dot"></span>添加新实例</div>
+    <div class="form-group">
+      <label>Manus API Key</label>
+      <input type="password" id="inp-apikey" placeholder="sk-xxxxxxxx..." autocomplete="off">
+    </div>
+    <div class="form-group">
+      <label>Task ID（对话 ID）</label>
+      <input type="text" id="inp-taskid" placeholder="xUGt4WyQr7KP..." autocomplete="off">
+    </div>
+    <div class="form-group">
+      <label>唤醒指令（可选，留空使用默认）</label>
+      <textarea id="inp-message" placeholder="[自动唤醒] 请执行 bash /home/ubuntu/service_restart.sh 重启所有服务"></textarea>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="addInstance()">＋ 添加实例</button>
+    </div>
+  </div>
+
+  <!-- 控制面板 -->
+  <div class="card">
+    <div class="card-title"><span class="dot" style="background:var(--accent2)"></span>控制面板</div>
+
+    <div class="stats-row" id="stats-row">
+      <div class="stat-card"><div class="stat-num" id="stat-total">0</div><div class="stat-label">总实例</div></div>
+      <div class="stat-card"><div class="stat-num" id="stat-active" style="color:var(--green)">0</div><div class="stat-label">活跃</div></div>
+      <div class="stat-card"><div class="stat-num" id="stat-invalid" style="color:var(--danger)">0</div><div class="stat-label">失效</div></div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-success" onclick="enableCron()">▶ 启用定时唤醒</button>
+      <button class="btn btn-ghost" onclick="disableCron()">⏸ 暂停定时唤醒</button>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="runNow()">⚡ 立即执行一次</button>
+      <button class="btn btn-ghost" onclick="loadInstances()">↻ 刷新</button>
+    </div>
+    <div class="btn-row" style="margin-top:20px; padding-top:16px; border-top:1px solid var(--border)">
+      <button class="btn btn-danger" onclick="showClearModal()">🗑 一键清除所有配置</button>
+    </div>
+  </div>
+
+  <!-- 实例列表 -->
+  <div class="card section-full">
+    <div class="card-title"><span class="dot" style="background:var(--accent2)"></span>实例列表</div>
+    <div class="instance-list" id="instance-list">
+      <div class="empty-state">暂无实例，请在左侧添加</div>
+    </div>
+  </div>
+
+  <!-- 日志面板 -->
+  <div class="card log-panel">
+    <div class="log-controls">
+      <div class="card-title" style="margin:0"><span class="dot" style="background:var(--warn)"></span>实时日志</div>
+      <div class="live-indicator"><span class="live-dot"></span>实时</div>
+      <div class="spacer"></div>
+      <button class="btn btn-ghost" style="padding:6px 12px;font-size:12px" onclick="clearLogs()">清空日志</button>
+      <button class="btn btn-ghost" style="padding:6px 12px;font-size:12px" onclick="scrollLogsToBottom()">↓ 底部</button>
+    </div>
+    <div class="log-box" id="log-box">连接日志流...</div>
+  </div>
+
+</div>
+
+<!-- 确认清除弹窗 -->
+<div class="modal-overlay" id="clear-modal">
+  <div class="modal">
+    <h3>⚠️ 确认清除所有配置</h3>
+    <p>此操作将：<br>
+    • 删除所有实例配置<br>
+    • 清空运行状态记录<br>
+    • 停止 cron 定时任务<br><br>
+    <strong>此操作不可撤销，确定继续吗？</strong></p>
+    <div class="btn-row">
+      <button class="btn btn-ghost" onclick="hideClearModal()">取消</button>
+      <button class="btn btn-danger" onclick="clearAll()">确认清除</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ── Toast ──────────────────────────────────────────────
+function toast(msg, type='info') {
+  const el = document.createElement('div');
+  el.className = `toast-item ${type}`;
+  el.textContent = msg;
+  document.getElementById('toast').appendChild(el);
+  setTimeout(() => el.remove(), 4000);
+}
+
+// ── API 调用 ───────────────────────────────────────────
+async function api(url, method='GET', body=null) {
+  const opts = { method, headers: {'Content-Type':'application/json'} };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(url, opts);
+  return r.json();
+}
+
+// ── 加载实例 ───────────────────────────────────────────
+async function loadInstances() {
+  const data = await api('/api/instances');
+  const list = document.getElementById('instance-list');
+  const instances = data.instances || [];
+
+  // 更新统计
+  document.getElementById('stat-total').textContent = instances.length;
+  document.getElementById('stat-active').textContent = instances.filter(i=>i.status==='active').length;
+  document.getElementById('stat-invalid').textContent = instances.filter(i=>i.status==='invalid'||i.status==='auto_removed').length;
+  document.getElementById('total-badge').textContent = `${instances.length} 个实例`;
+  document.getElementById('total-badge').className = `badge ${instances.length > 0 ? 'green' : 'gray'}`;
+
+  if (instances.length === 0) {
+    list.innerHTML = '<div class="empty-state">暂无实例，请在上方添加</div>';
+    return;
+  }
+
+  list.innerHTML = instances.map(inst => `
+    <div class="instance-item" id="inst-${inst.task_id}">
+      <div class="instance-info">
+        <div class="instance-status">
+          <span class="status-dot ${inst.status}"></span>
+          <span class="instance-id">${inst.task_id_short}</span>
+        </div>
+        <div class="instance-meta">
+          <span>API: ${inst.api_key_short}</span>
+          <span>失败: ${inst.failures} 次</span>
+          <span>最后成功: ${inst.last_ok}</span>
+          <span>最后检查: ${inst.last_run}</span>
+        </div>
+      </div>
+      <button class="btn btn-danger" style="padding:6px 12px;font-size:12px" onclick="removeInstance('${inst.task_id}')">移除</button>
+    </div>
+  `).join('');
+}
+
+// ── 添加实例 ───────────────────────────────────────────
+async function addInstance() {
+  const apiKey = document.getElementById('inp-apikey').value.trim();
+  const taskId = document.getElementById('inp-taskid').value.trim();
+  const message = document.getElementById('inp-message').value.trim();
+
+  if (!apiKey || !taskId) { toast('API Key 和 Task ID 不能为空', 'error'); return; }
+
+  toast('验证中，请稍候...', 'info');
+  const data = await api('/api/instances/add', 'POST', {api_key: apiKey, task_id: taskId, message});
+  if (data.ok) {
+    toast(data.message, 'success');
+    document.getElementById('inp-apikey').value = '';
+    document.getElementById('inp-taskid').value = '';
+    document.getElementById('inp-message').value = '';
+    loadInstances();
+  } else {
+    toast(data.error, 'error');
+  }
+}
+
+// ── 移除实例 ───────────────────────────────────────────
+async function removeInstance(taskId) {
+  const data = await api('/api/instances/remove', 'POST', {task_id: taskId});
+  if (data.ok) { toast(data.message, 'success'); loadInstances(); }
+  else toast(data.error, 'error');
+}
+
+// ── cron 控制 ──────────────────────────────────────────
+async function loadCronStatus() {
+  const data = await api('/api/cron/status');
+  const badge = document.getElementById('cron-badge');
+  if (data.active) {
+    badge.textContent = 'cron 运行中';
+    badge.className = 'badge green';
+  } else {
+    badge.textContent = 'cron 已停止';
+    badge.className = 'badge red';
+  }
+}
+
+async function enableCron() {
+  const data = await api('/api/cron/enable', 'POST');
+  toast(data.message || data.error, data.ok ? 'success' : 'error');
+  loadCronStatus();
+}
+
+async function disableCron() {
+  const data = await api('/api/cron/disable', 'POST');
+  toast(data.message || data.error, data.ok ? 'success' : 'error');
+  loadCronStatus();
+}
+
+async function runNow() {
+  toast('正在执行唤醒检查...', 'info');
+  const data = await api('/api/run_now', 'POST');
+  if (data.ok) { toast('执行完成，请查看日志', 'success'); loadInstances(); }
+  else toast(data.error, 'error');
+}
+
+// ── 清除所有 ───────────────────────────────────────────
+function showClearModal() { document.getElementById('clear-modal').classList.add('show'); }
+function hideClearModal() { document.getElementById('clear-modal').classList.remove('show'); }
+
+async function clearAll() {
+  hideClearModal();
+  const data = await api('/api/instances/clear_all', 'POST');
+  if (data.ok) { toast(data.message, 'success'); loadInstances(); loadCronStatus(); }
+  else toast(data.error, 'error');
+}
+
+// ── 日志 ──────────────────────────────────────────────
+const logBox = document.getElementById('log-box');
+let logLines = [];
+const MAX_LOG_LINES = 500;
+
+function colorLine(line) {
+  if (line.includes('[ERROR]')) return `<span class="log-error">${escHtml(line)}</span>`;
+  if (line.includes('[WARNING]')) return `<span class="log-warn">${escHtml(line)}</span>`;
+  if (line.includes('[PANEL]')) return `<span class="log-panel">${escHtml(line)}</span>`;
+  return `<span class="log-info">${escHtml(line)}</span>`;
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function appendLog(line) {
+  if (!line.trim()) return;
+  logLines.push(line);
+  if (logLines.length > MAX_LOG_LINES) logLines = logLines.slice(-MAX_LOG_LINES);
+  const atBottom = logBox.scrollHeight - logBox.scrollTop - logBox.clientHeight < 60;
+  logBox.innerHTML = logLines.map(colorLine).join('\n');
+  if (atBottom) logBox.scrollTop = logBox.scrollHeight;
+}
+
+function scrollLogsToBottom() { logBox.scrollTop = logBox.scrollHeight; }
+
+async function clearLogs() {
+  const data = await api('/api/logs/clear', 'POST');
+  if (data.ok) { logLines = []; logBox.innerHTML = '日志已清空'; toast('日志已清空', 'success'); }
+}
+
+function connectLogStream() {
+  const es = new EventSource('/api/logs/stream');
+  es.onmessage = e => appendLog(e.data);
+  es.onerror = () => {
+    appendLog('[连接断开，5秒后重连...]');
+    es.close();
+    setTimeout(connectLogStream, 5000);
+  };
+}
+
+// ── 初始化 ────────────────────────────────────────────
+loadInstances();
+loadCronStatus();
+connectLogStream();
+setInterval(() => { loadInstances(); loadCronStatus(); }, 15000);
+</script>
+</body>
+</html>
