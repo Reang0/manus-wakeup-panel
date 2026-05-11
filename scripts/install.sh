@@ -14,7 +14,7 @@ SERVICE_FILE="/etc/systemd/system/manus-panel.service"
 AGENT_SCRIPT="/usr/local/bin/manus_wakeup_agent.py"
 LOG_FILE="/var/log/manus_wakeup.log"
 PANEL_PORT=7788
-GITHUB_RAW="https://raw.githubusercontent.com/Reang0/manus-wakeup-panel/main"
+GITHUB_RAW="https://raw.githubusercontent.com/Reang0/manus-wakeup-panel/master"
 
 info()    { echo -e "${CYAN}[INFO]${NC} $1"; }
 success() { echo -e "${GREEN}[✓]${NC} $1"; }
