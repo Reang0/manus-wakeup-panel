@@ -99,17 +99,25 @@ def add_instance():
 
     # 验证 API Key + Task ID 是否有效
     try:
-        import urllib.request as ur
-        from urllib.parse import urlencode
-        url = f"{MANUS_API_BASE}/v2/task.listMessages?" + urlencode({"task_id": task_id, "limit": 1})
-        req = ur.Request(url, headers={"x-manus-api-key": api_key})
-        with ur.urlopen(req, timeout=10) as resp:
-            result = json.loads(resp.read())
+        import requests as req_lib
+        url = f"{MANUS_API_BASE}/v2/task.listMessages"
+        headers = {
+            "x-manus-api-key": api_key,
+            "User-Agent": "Mozilla/5.0 (compatible; ManusPanel/1.0)",
+            "Accept": "application/json"
+        }
+        resp = req_lib.get(url, params={"task_id": task_id, "limit": 1}, headers=headers, timeout=10)
+        result = resp.json()
         if not result.get("ok"):
             err = result.get("error", {})
-            return jsonify({"ok": False, "error": f"验证失败: {err.get('message', '无效的 API Key 或 Task ID')}"})
+            if isinstance(err, dict):
+                msg = err.get("message", "无效的 API Key 或 Task ID")
+            else:
+                msg = str(err)
+            return jsonify({"ok": False, "error": f"验证失败: {msg}"})
     except Exception as e:
         return jsonify({"ok": False, "error": f"验证请求失败: {str(e)}"})
+
 
     config = load_config()
     for inst in config["instances"]:
