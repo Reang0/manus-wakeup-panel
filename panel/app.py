@@ -24,6 +24,22 @@ AGENT_SCRIPT = Path("/usr/local/bin/manus_wakeup_agent.py")
 BASE_DIR.mkdir(parents=True, exist_ok=True)
 
 MANUS_API_BASE = "https://api.manus.ai"
+SETTINGS_FILE = BASE_DIR / "settings.json"
+DEFAULT_IDLE_MIN = 10
+
+def load_settings():
+    defaults = {"idle_minutes": DEFAULT_IDLE_MIN}
+    if not SETTINGS_FILE.exists():
+        return defaults
+    try:
+        data = json.loads(SETTINGS_FILE.read_text())
+        defaults.update(data)
+        return defaults
+    except Exception:
+        return defaults
+
+def save_settings(settings):
+    SETTINGS_FILE.write_text(json.dumps(settings, indent=2, ensure_ascii=False))
 
 # ── 工具函数 ────────────────────────────────────────────
 def load_config():
@@ -207,6 +223,26 @@ def cron_enable():
     )
     write_log("启用 cron 定时任务")
     return jsonify({"ok": True, "message": "cron 定时任务已启用（每分钟执行）"})
+
+@app.route("/api/settings", methods=["GET"])
+def get_settings():
+    return jsonify({"ok": True, "settings": load_settings()})
+
+@app.route("/api/settings", methods=["POST"])
+def update_settings():
+    data = request.json or {}
+    settings = load_settings()
+    if "idle_minutes" in data:
+        try:
+            m = int(data["idle_minutes"])
+            if m < 1:
+                return jsonify({"ok": False, "error": "阈值最小为 1 分钟"})
+            settings["idle_minutes"] = m
+        except (ValueError, TypeError):
+            return jsonify({"ok": False, "error": "无效的分钟数"})
+    save_settings(settings)
+    write_log(f"更新设置: 空闲阈值={settings.get('idle_minutes')} 分钟")
+    return jsonify({"ok": True, "message": "设置已保存", "settings": settings})
 
 @app.route("/api/cron/disable", methods=["POST"])
 def cron_disable():

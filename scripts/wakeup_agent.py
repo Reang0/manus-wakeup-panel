@@ -46,12 +46,33 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ── 常量 ────────────────────────────────────────────────
-MANUS_API_BASE = "https://api.manus.ai"
-MAX_FAILURES   = 5    # 连续失败 N 次后自动注销
-IDLE_MINUTES   = 10   # 超过 N 分钟没有消息活动才发唤醒
+# ── 常量 ────────────────────────────────────
+MANUS_API_BASE    = "https://api.manus.ai"
+MAX_FAILURES      = 5     # 连续失败 N 次后自动注销
+DEFAULT_IDLE_MIN  = 10    # 默认空闲阈值（分钟）
+SETTINGS_FILE     = BASE_DIR / "settings.json"
 
 
+def load_settings():
+    """Load global settings, return defaults if not found."""
+    defaults = {"idle_minutes": DEFAULT_IDLE_MIN}
+    if not SETTINGS_FILE.exists():
+        return defaults
+    try:
+        data = json.loads(SETTINGS_FILE.read_text())
+        defaults.update(data)
+        return defaults
+    except Exception:
+        return defaults
+
+
+def save_settings(settings):
+    SETTINGS_FILE.write_text(json.dumps(settings, indent=2, ensure_ascii=False))
+
+
+def get_idle_minutes():
+    """Get current idle threshold in minutes."""
+    return int(load_settings().get("idle_minutes", DEFAULT_IDLE_MIN))
 # ════════════════════════════════════════════════════════
 #  HTTP 工具
 # ════════════════════════════════════════════════════════
@@ -177,11 +198,14 @@ def get_last_message_time(api_key, task_id):
         return None, False
 
 
-def needs_wakeup(api_key, task_id):
+def needs_wakeup(api_key, task_id, idle_min=None):
     """
     判断是否需要发送唤醒消息。
     返回 (bool: 是否需要唤醒, bool: 是否需要注销)
     """
+    if idle_min is None:
+        idle_min = get_idle_minutes()
+
     last_time, is_invalid = get_last_message_time(api_key, task_id)
 
     if is_invalid:
@@ -196,9 +220,9 @@ def needs_wakeup(api_key, task_id):
     idle_seconds = (now_utc - last_time).total_seconds()
     idle_minutes = idle_seconds / 60
 
-    logger.info(f"[{task_id[:8]}] 最近消息距今 {idle_minutes:.1f} 分钟（阈值 {IDLE_MINUTES} 分钟）")
+    logger.info(f"[{task_id[:8]}] 最近消息距今 {idle_minutes:.1f} 分钟（阈值 {idle_min} 分钟）")
 
-    if idle_minutes >= IDLE_MINUTES:
+    if idle_minutes >= idle_min:
         logger.info(f"[{task_id[:8]}] 超过阈值，需要唤醒")
         return True, False
     else:
@@ -239,7 +263,8 @@ def process_instance(instance, state):
     s = state[task_id]
     s["last_run"] = datetime.now().isoformat()
 
-    wakeup_needed, is_invalid = needs_wakeup(api_key, task_id)
+    idle_min = get_idle_minutes()
+    wakeup_needed, is_invalid = needs_wakeup(api_key, task_id, idle_min)
 
     if is_invalid:
         logger.warning(f"[{short_id}] Task 已失效，自动注销")
@@ -295,7 +320,8 @@ def run():
             logger.info("没有配置任何实例，退出")
             return
 
-        logger.info(f"开始检查 {len(instances)} 个实例（空闲阈值: {IDLE_MINUTES} 分钟）")
+        idle_min = get_idle_minutes()
+        logger.info(f"开始检查 {len(instances)} 个实例（空闲阈值: {idle_min} 分钟）")
         to_remove = []
 
         for instance in instances:
@@ -369,7 +395,7 @@ def cmd_list():
 def cmd_status():
     config = load_config()
     print(f"\n实例总数: {len(config.get('instances', []))}")
-    print(f"空闲阈值: {IDLE_MINUTES} 分钟")
+    print(f"空闲阈值: {get_idle_minutes()} 分钟（可用 set-threshold <分钟数> 修改）")
     print(f"日志文件: {LOG_FILE}")
     try:
         lines = LOG_FILE.read_text().splitlines()[-10:]
@@ -384,6 +410,20 @@ def cmd_status():
 #  入口
 # ════════════════════════════════════════════════════════
 
+def cmd_set_threshold(minutes):
+    try:
+        m = int(minutes)
+        if m < 1:
+            print("错误：阈值最小为 1 分钟")
+            return
+        settings = load_settings()
+        settings["idle_minutes"] = m
+        save_settings(settings)
+        print(f"✓ 空闲阈值已设置为 {m} 分钟")
+    except ValueError:
+        print(f"错误：无效的分钟数: {minutes}")
+
+
 if __name__ == "__main__":
     args = sys.argv[1:]
     if not args or args[0] == "run":
@@ -396,6 +436,10 @@ if __name__ == "__main__":
         cmd_list()
     elif args[0] == "status":
         cmd_status()
+    elif args[0] == "set-threshold" and len(args) >= 2:
+        cmd_set_threshold(args[1])
+    elif args[0] == "get-threshold":
+        print(f"当前空闲阈值: {get_idle_minutes()} 分钟")
     else:
         print("""
 用法：
@@ -404,4 +448,6 @@ if __name__ == "__main__":
   python3 wakeup_agent.py remove <task_id>                 # 移除实例
   python3 wakeup_agent.py list                             # 列出所有实例
   python3 wakeup_agent.py status                           # 查看状态
+  python3 wakeup_agent.py set-threshold <分钟数>             # 设置空闲阈值（默认 10 分钟）
+  python3 wakeup_agent.py get-threshold                    # 查看当前阈值
         """)
